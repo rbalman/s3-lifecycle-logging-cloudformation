@@ -45,4 +45,4 @@ aws cloudformation delete-stack --stack-name s3-life-cycle-versioning --profile 
 ```
 
 ## Demo
-![Demo](images/s3-lifecycle-architecture.png "Demo")
+![Demo](images/demo.gif "Demo")
