@@ -1,0 +1,169 @@
+Parameters:
+  SourceBucketName:
+    Description: Name of the bucket
+    Type: String
+    Default: completely-arew-random-biuket
+  JobFilesPath:
+    Description: Prefix of the job files in S3
+    Type: String
+    Default: "jobfiles"
+  FilesPath:
+    Description: Prefix of the user files in s3
+    Type: String
+    Default: "files"
+Resources:
+  SourceBucket:
+    Type: AWS::S3::Bucket
+    # DeletionPolicy: Retain # Deletion protection will be enabled once tested fully
+    Properties:
+      BucketName: !Ref SourceBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: TRUE
+        BlockPublicPolicy: TRUE
+        IgnorePublicAcls: TRUE
+        RestrictPublicBuckets: TRUE
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: delete-jobs-file-after-one-day
+            ExpirationInDays: 1
+            NoncurrentVersionExpirationInDays: 1
+            Prefix: !Ref JobFilesPath
+            Status: Enabled
+            TagFilters:
+              - Key: DeleteAfter
+                Value: OneDay
+          - Id: delete-files-with-delete-request
+            ExpiredObjectDeleteMarker: true
+            NoncurrentVersionExpirationInDays: 30
+            Prefix: !Ref FilesPath
+            Status: Enabled
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LoggingBucket
+        LogFilePrefix: "logs/"
+      ReplicationConfiguration:
+        Role: !GetAtt BucketReplicationRole.Arn
+        Rules:
+          - Id: replicate-files-object
+            # DeleteMarkerReplication:
+            #   Status: Enabled
+            Status: Enabled
+            Prefix: !Ref FilesPath
+            Destination:
+              Bucket: !Sub 'arn:aws:s3:::${BackupBucket}'
+              StorageClass: GLACIER
+      Tags:
+        - Key: Name
+          Value: !Ref SourceBucketName
+        - Key: ResourceType
+          Value: s3
+
+  # SourceBucketPolicy:
+  #   Type: AWS::S3::BucketPolicy
+  #   # DeletionPolicy: Retain
+  #   Properties:
+  #     Bucket: !Ref SourceBucket
+  #     PolicyDocument:
+  #       Version: '2012-10-17'
+  #       Statement:
+  #         - Effect: Allow
+  #           Action:
+  #             - "s3:*"
+  #           Principal:
+  #             AWS:
+  #               - !Sub "arn:aws:iam::${AWS::AccountId}:root"
+  #           Resource:
+  #             - !Sub "arn:${AWS::Partition}:s3:::${SourceBucketName}"
+  #             - !Sub "arn:${AWS::Partition}:s3:::${SourceBucketName}/*"
+
+
+  BucketReplicationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - s3.amazonaws.com
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - 's3:GetReplicationConfiguration'
+                  - 's3:ListBucket'
+                Effect: Allow
+                Resource: !Sub 'arn:aws:s3:::${SourceBucketName}'
+              - Action:
+                  - 's3:GetObjectVersion'
+                  - 's3:GetObjectVersionAcl'
+                Effect: Allow
+                Resource: !Sub 'arn:aws:s3:::${SourceBucketName}/*'
+              - Action:
+                  - 's3:ReplicateObject'
+                  - 's3:ReplicateDelete'
+                Effect: Allow
+                Resource:
+                  - !Sub 'arn:aws:s3:::backup-${AWS::Region}-${AWS::AccountId}/*'
+
+  BackupBucket:
+    Type: 'AWS::S3::Bucket'
+    DependsOn:
+      - BucketReplicationRole
+    Properties:
+      BucketName: !Sub backup-${AWS::Region}-${AWS::AccountId} # to give it a unique name
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: TRUE
+        BlockPublicPolicy: TRUE
+        IgnorePublicAcls: TRUE
+        RestrictPublicBuckets: TRUE
+      LifecycleConfiguration:
+        Rules:
+          - Id: delete-files-with-delete-request
+            ExpiredObjectDeleteMarker: true
+            NoncurrentVersionExpirationInDays: 45
+            Prefix: !Ref FilesPath
+            Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Sub backup-${AWS::Region}-${AWS::AccountId}
+        - Key: ResourceType
+          Value: s3
+
+  LoggingBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Sub logs-${AWS::Region}-${AWS::AccountId} # to give it a unique name
+      AccessControl: LogDeliveryWrite
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: TRUE
+        BlockPublicPolicy: TRUE
+        IgnorePublicAcls: TRUE
+        RestrictPublicBuckets: TRUE
+      Tags:
+        - Key: Name
+          Value: !Sub logs-${AWS::Region}-${AWS::AccountId}
+        - Key: ResourceType
+          Value: s3
