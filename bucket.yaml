@@ -20,7 +20,7 @@ Resources:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
-              SSEAlgorithm: aws:kms
+              SSEAlgorithm: AES256
             BucketKeyEnabled: true
       PublicAccessBlockConfiguration:
         BlockPublicAcls: TRUE
@@ -64,24 +64,24 @@ Resources:
         - Key: ResourceType
           Value: s3
 
-  # SourceBucketPolicy:
-  #   Type: AWS::S3::BucketPolicy
-  #   # DeletionPolicy: Retain
-  #   Properties:
-  #     Bucket: !Ref SourceBucket
-  #     PolicyDocument:
-  #       Version: '2012-10-17'
-  #       Statement:
-  #         - Effect: Allow
-  #           Action:
-  #             - "s3:*"
-  #           Principal:
-  #             AWS:
-  #               - !Sub "arn:aws:iam::${AWS::AccountId}:root"
-  #           Resource:
-  #             - !Sub "arn:${AWS::Partition}:s3:::${SourceBucketName}"
-  #             - !Sub "arn:${AWS::Partition}:s3:::${SourceBucketName}/*"
-
+  SourceBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    # DeletionPolicy: Retain
+    Properties:
+      Bucket: !Ref SourceBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowSSLRequestsOnly # AWS Foundational Security Best Practices v1.0.0 S3.5
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt SourceBucket.Arn
+              - !Sub '${SourceBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': false
 
   BucketReplicationRole:
     Type: AWS::IAM::Role
